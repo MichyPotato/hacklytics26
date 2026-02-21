@@ -1,0 +1,27 @@
+/* Minimal App.css to satisfy import in src/App.jsx */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+.app-header {
+  background: #0b5fff;
+  color: #fff;
+  padding: 12px 16px;
+  font-weight: 600;
+}
+.tab-bar {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #f5f7fb;
+}
+.tab-bar button.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.content {
+  flex: 1;
+  overflow: auto;
+}
