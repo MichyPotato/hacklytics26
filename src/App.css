@@ -16,10 +16,23 @@
   padding: 12px 16px;
   background: #f5f7fb;
 }
-.tab-bar button.active {
-  background: var(--accent);
+.tab-bar .nav-link {
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  text-decoration: none;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.tab-bar .nav-link:hover {
+  background: #f0f0f0;
+}
+.tab-bar .nav-link.active {
+  background: #0b5fff;
   color: #fff;
-  border-color: var(--accent);
+  border-color: #0b5fff;
 }
 .content {
   flex: 1;
