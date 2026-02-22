@@ -1,4 +1,4 @@
-# Hacklytics - Conversation Analyzer Setup Guide
+# Hacklytics - Setup Guide
 
 ## Overview
 
@@ -67,6 +67,33 @@ node server.js
 
 The backend will run on `http://localhost:5000`
 
+5.1 (Optional) Set up Gemini API key
+
+To enable calling Google Gemini from the backend, place your API key in `backend/.env` or set the environment variable before starting the backend.
+
+Copy the example file and edit it (do not commit real keys):
+
+```powershell
+cp backend\.env.example backend\.env
+notepad backend\.env
+```
+
+Or set the variable directly in PowerShell before running the server:
+
+```powershell
+$env:GEMINI_API_KEY = 'YOUR_ACTUAL_TOKEN'
+node backend/server.js
+```
+
+On macOS/Linux (bash/zsh):
+
+```bash
+export GEMINI_API_KEY='YOUR_ACTUAL_TOKEN'
+node backend/server.js
+```
+
+If `GEMINI_API_KEY` is not set the backend will simulate a score for testing.
+
 ### Running Both Frontend and Backend Concurrently
 
 From the root directory, run both servers at once:
@@ -80,22 +107,16 @@ This requires the `concurrently` package (already in devDependencies).
 
 ### Frontend (React Components)
 
-- **ConversationUploader.jsx** - Main component with 4 stages:
-  - Login stage: Instagram authentication
-  - Select stage: Choose conversation
-  - Upload stage: Upload selected conversation
-  - Analyzing stage: Progress bar and results display
+- **ButtonTab.jsx** - Panic Button UI: location, map, and audio recording
 
-- **ConversationUploader.css** - Styling for all UI elements including the progress bar
+Note: The Conversation Analyzer component has been removed. The Panic Button is now the primary frontend feature and the home screen.
 
 ### Backend (Express Server)
 
 - **server.js** - Express server with API endpoints:
   - `POST /api/instagram/login` - Authenticate with Instagram
   - `POST /api/instagram/conversations` - Fetch user's conversations
-  - `POST /api/analyze/upload` - Upload conversation for analysis
-  - `POST /api/analyze/process` - Start ML analysis (placeholder)
-  - `GET /api/analyze/:conversationId` - Get analysis results
+  - (Conversation analysis endpoints removed in this branch)
 
 ### Python Scripts (instagrapi Integration)
 
@@ -157,43 +178,7 @@ Response:
 }
 ```
 
-### 3. Upload Conversation
-```
-POST /api/analyze/upload
-Content-Type: application/json
-
-{
-  "username": "your_instagram_username",
-  "conversationWith": "friend_username",
-  "sessionId": "session_id"
-}
-
-Response:
-{
-  "success": true,
-  "conversationId": "username_friend_1708518600000",
-  "messageCount": 45,
-  "message": "Conversation uploaded successfully"
-}
-```
-
-### 4. Process Analysis
-```
-POST /api/analyze/process
-Content-Type: application/json
-
-{
-  "conversationId": "username_friend_1708518600000"
-}
-
-Response:
-{
-  "success": true,
-  "message": "Analysis started",
-  "conversationId": "username_friend_1708518600000",
-  "status": "processing"
-}
-```
+> Conversation upload and ML analysis endpoints have been removed from this branch. The app now focuses on the Panic Button functionality.
 
 ### 5. Get Analysis Results
 ```
@@ -242,14 +227,7 @@ The conversation data is stored as JSON at `backend/conversations/{conversationI
 
 ## Progress Bar
 
-The frontend implements a visual progress bar that:
-- Starts at 0% when upload begins
-- Reaches 30% after upload
-- Reaches 50% when analysis starts
-- Reaches 70% during processing
-- Reaches 100% when complete
-
-You can customize the speed and specific thresholds in `ConversationUploader.jsx` (see the `analyzeConversation` function).
+The previous frontend conversation analysis flow (uploads, processing, progress bar) has been removed. The Panic Button UI does not include the analysis flow.
 
 ## Conversation Data Format
 
@@ -343,13 +321,13 @@ Conversations are stored as JSON with the following structure:
 hacklytics/
 ├── src/
 │   ├── components/
-│   │   ├── ConversationUploader.jsx
-│   │   └── ConversationUploader.css
+│   │   ├── ButtonTab.jsx
+  │   └── ...
 │   ├── App.jsx
 │   └── ...
 ├── backend/
 │   ├── server.js
-│   ├── conversations/  (stores uploaded conversations)
+│   ├── conversations/
 │   ├── python/
 │   │   ├── instagram_login.py
 │   │   ├── get_conversations.py

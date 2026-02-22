@@ -1,17 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import ActionButtons from './ActionButtons'
 
 export default function ButtonTab() {
   const [location, setLocation] = useState(null)
   const [locationError, setLocationError] = useState(null)
   const [isRecording, setIsRecording] = useState(false)
   const [recordedAudioURL, setRecordedAudioURL] = useState(null)
+  const [transcript, setTranscript] = useState('')
+  const [isTranscribing, setIsTranscribing] = useState(false)
+  const [analysisResult, setAnalysisResult] = useState(null)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
   const mediaRecorderRef = useRef(null)
   const audioContextRef = useRef(null)
   const streamRef = useRef(null)
   const mapRef = useRef(null)
   const mapContainerRef = useRef(null)
+  const recognitionRef = useRef(null)
+  const transcriptRef = useRef('')
 
   // Request user location on component mount
   useEffect(() => {
@@ -68,10 +75,10 @@ export default function ButtonTab() {
     }
   }, [location])
 
-  // Handle panic button press - start/stop recording
+  // Handle panic button press - start/stop recording and transcription
   const handlePanicPress = async () => {
     if (!isRecording) {
-      // Start recording
+      // Start recording and transcription
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
         streamRef.current = stream
@@ -84,25 +91,141 @@ export default function ButtonTab() {
           chunks.push(e.data)
         }
 
-        mediaRecorder.onstop = () => {
+        mediaRecorder.onstop = async () => {
+          console.log('Recording stopped')
           const blob = new Blob(chunks, { type: 'audio/webm' })
           const url = URL.createObjectURL(blob)
           setRecordedAudioURL(url)
           stream.getTracks().forEach(track => track.stop())
+          
+          // Give speech recognition time to finish
+          setTimeout(() => {
+            console.log('Current transcript state:', transcriptRef.current)
+            // Send transcript to backend for Gemini analysis
+            if (transcriptRef.current && transcriptRef.current.trim()) {
+              console.log('Calling analyzeTranscript with:', transcriptRef.current)
+              analyzeTranscript(transcriptRef.current)
+            } else {
+              console.log('Transcript is empty, not analyzing')
+            }
+          }, 500)
         }
 
         mediaRecorder.start()
         setIsRecording(true)
+        setTranscript('')
+        transcriptRef.current = ''
+        setAnalysisResult(null)
+        
+        // Start transcription
+        startTranscription()
       } catch (error) {
         console.error('Error accessing microphone:', error)
         alert('Could not access microphone. Please check permissions.')
       }
     } else {
-      // Stop recording
+      // Stop recording and transcription
       if (mediaRecorderRef.current) {
         mediaRecorderRef.current.stop()
         setIsRecording(false)
       }
+      if (recognitionRef.current) {
+        recognitionRef.current.stop()
+        setIsTranscribing(false)
+      }
+    }
+  }
+
+  // Initialize and start Web Speech API transcription
+  const startTranscription = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    
+    if (!SpeechRecognition) {
+      console.error('Speech Recognition API not supported in this browser')
+      alert('Speech Recognition not supported. Please use Chrome or Edge.')
+      return
+    }
+
+    const recognition = new SpeechRecognition()
+    recognitionRef.current = recognition
+
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.language = 'en-US'
+
+    let fullTranscript = ''
+
+    recognition.onstart = () => {
+      setIsTranscribing(true)
+    }
+
+    recognition.onresult = (event) => {
+      let interimTranscript = ''
+      
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript
+        
+        if (event.results[i].isFinal) {
+          fullTranscript += transcript + ' '
+        } else {
+          interimTranscript += transcript
+        }
+      }
+
+      const currentTranscript = fullTranscript + interimTranscript
+      setTranscript(currentTranscript)
+      transcriptRef.current = currentTranscript
+    }
+
+    recognition.onerror = (event) => {
+      console.error('Speech recognition error:', event.error)
+    }
+
+    recognition.onend = () => {
+      setIsTranscribing(false)
+      // Update the final transcript
+      fullTranscript = fullTranscript.trim()
+      setTranscript(fullTranscript)
+      transcriptRef.current = fullTranscript
+    }
+
+    recognition.start()
+  }
+
+  // Send transcript to backend for Gemini analysis
+  const analyzeTranscript = async (text) => {
+    if (!text.trim()) return
+
+    setIsAnalyzing(true)
+    try {
+      console.log('Sending transcript to backend:', text)
+      const response = await fetch('http://localhost:5000/api/analyze-transcript', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          transcript: text,
+          location: location,
+        }),
+      })
+
+      console.log('Response status:', response.status)
+      const data = await response.json()
+      console.log('Response data:', data)
+      
+      if (data.success) {
+        console.log('Analysis successful, setting result')
+        setAnalysisResult(data.analysis)
+      } else {
+        console.error('Analysis failed:', data.message)
+        alert('Analysis failed: ' + data.message)
+      }
+    } catch (error) {
+      console.error('Error analyzing transcript:', error)
+      alert('Error analyzing transcript: ' + error.message)
+    } finally {
+      setIsAnalyzing(false)
     }
   }
 
@@ -168,6 +291,16 @@ export default function ButtonTab() {
         {isRecording ? '● RECORDING' : 'PANIC'}
       </button>
 
+      {/* Action Buttons - Display below panic button when analysis is complete */}
+      {analysisResult && (
+        <ActionButtons 
+          analysisResult={analysisResult} 
+          transcript={transcript}
+          recordedAudioURL={recordedAudioURL}
+          location={location}
+        />
+      )}
+
       {/* Recording Status */}
       {isRecording && (
         <p style={{ color: '#dc2626', fontWeight: 'bold', marginBottom: 20 }}>
@@ -175,11 +308,87 @@ export default function ButtonTab() {
         </p>
       )}
 
+      {/* Live Transcript Display */}
+      {isRecording && (
+        <div style={{ 
+          marginBottom: 20, 
+          width: '100%', 
+          maxWidth: 600, 
+          padding: 15, 
+          backgroundColor: '#f8f9fa', 
+          borderRadius: 8, 
+          border: '2px solid #0066cc',
+          maxHeight: 200,
+          overflowY: 'auto'
+        }}>
+          <p style={{ margin: '0 0 10px 0', fontWeight: 'bold', color: '#0066cc' }}>
+            {isTranscribing ? '🎙️ Live Transcript' : '💬 Transcript'}
+          </p>
+          <p style={{ 
+            margin: 0, 
+            fontSize: 14, 
+            color: '#333', 
+            minHeight: 40,
+            whiteSpace: 'pre-wrap',
+            wordWrap: 'break-word'
+          }}>
+            {transcript || '(waiting for speech...)'}
+          </p>
+        </div>
+      )}
+
       {/* Recorded Audio Playback */}
       {recordedAudioURL && (
         <div style={{ marginBottom: 20 }}>
           <p style={{ marginBottom: 10 }}>Recorded Audio:</p>
           <audio controls src={recordedAudioURL} style={{ width: 300 }} />
+        </div>
+      )}
+
+      {/* Analysis Result */}
+      {isAnalyzing && (
+        <div style={{ 
+          marginBottom: 20, 
+          width: '100%', 
+          maxWidth: 600, 
+          padding: 15, 
+          backgroundColor: '#e3f2fd', 
+          borderRadius: 8, 
+          border: '2px solid #1976d2',
+          textAlign: 'center'
+        }}>
+          <p style={{ margin: '0', color: '#1976d2', fontWeight: 'bold' }}>
+            🔍 Analyzing transcript with Gemini...
+          </p>
+        </div>
+      )}
+
+      {analysisResult && (
+        <div style={{ 
+          marginBottom: 20, 
+          width: '100%', 
+          maxWidth: 600, 
+          padding: 15, 
+          backgroundColor: '#f0f9ff', 
+          borderRadius: 8, 
+          border: '2px solid #059669',
+        }}>
+          <p style={{ margin: '0 0 10px 0', fontWeight: 'bold', color: '#059669' }}>
+            ✓ Gemini Analysis
+          </p>
+          <div style={{ 
+            fontSize: 14, 
+            color: '#333', 
+            whiteSpace: 'pre-wrap',
+            wordWrap: 'break-word',
+            backgroundColor: '#ffffff',
+            padding: 10,
+            borderRadius: 4,
+            maxHeight: 300,
+            overflowY: 'auto'
+          }}>
+            {analysisResult}
+          </div>
         </div>
       )}
 
