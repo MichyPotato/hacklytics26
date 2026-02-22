@@ -1,35 +1,90 @@
-import sqlite3 from 'sqlite3'
+import initSqlJs from 'sql.js'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import fs from 'fs'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const dbPath = path.join(__dirname, 'app.sqlite')
-const db = new sqlite3.Database(dbPath)
+let db = null
+let SQL = null
 
-const run = (sql, params = []) => new Promise((resolve, reject) => {
-  db.run(sql, params, function onRun(err) {
-    if (err) return reject(err)
-    resolve({ id: this.lastID, changes: this.changes })
-  })
-})
+// Initialize sql.js and load database from disk
+const initializeSqlJs = async () => {
+  if (SQL) return SQL
+  SQL = await initSqlJs()
+  return SQL
+}
 
-const get = (sql, params = []) => new Promise((resolve, reject) => {
-  db.get(sql, params, (err, row) => {
-    if (err) return reject(err)
-    resolve(row)
-  })
-})
+const loadDatabase = async () => {
+  await initializeSqlJs()
+  
+  if (fs.existsSync(dbPath)) {
+    const buffer = fs.readFileSync(dbPath)
+    db = new SQL.Database(buffer)
+  } else {
+    db = new SQL.Database()
+  }
+  return db
+}
 
-const all = (sql, params = []) => new Promise((resolve, reject) => {
-  db.all(sql, params, (err, rows) => {
-    if (err) return reject(err)
-    resolve(rows)
-  })
-})
+const saveDatabase = () => {
+  if (!db) return
+  const data = db.export()
+  const buffer = Buffer.from(data)
+  fs.writeFileSync(dbPath, buffer)
+}
+
+const run = (sql, params = []) => {
+  try {
+    db.run(sql, params)
+    saveDatabase()
+    return Promise.resolve({ changes: db.getRowsModified() })
+  } catch (error) {
+    return Promise.reject(error)
+  }
+}
+
+const getLastInsertRowId = () => {
+  try {
+    const result = db.exec('SELECT last_insert_rowid() as id')
+    return result.length > 0 ? result[0].values[0][0] : null
+  } catch (error) {
+    return null
+  }
+}
+
+const get = (sql, params = []) => {
+  try {
+    const stmt = db.prepare(sql)
+    stmt.bind(params)
+    const result = stmt.step() ? stmt.getAsObject() : undefined
+    stmt.free()
+    return Promise.resolve(result)
+  } catch (error) {
+    return Promise.reject(error)
+  }
+}
+
+const all = (sql, params = []) => {
+  try {
+    const stmt = db.prepare(sql)
+    stmt.bind(params)
+    const result = []
+    while (stmt.step()) {
+      result.push(stmt.getAsObject())
+    }
+    stmt.free()
+    return Promise.resolve(result)
+  } catch (error) {
+    return Promise.reject(error)
+  }
+}
 
 export const initDb = async () => {
+  await loadDatabase()
+  
   await run(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,14 +116,15 @@ export const initDb = async () => {
 
 export const createUser = async ({ email, passwordHash, homeLocation, workLocation, preferredLanguage }) => {
   const now = new Date().toISOString()
-  const result = await run(
+  await run(
     `INSERT INTO users (email, password_hash, home_location, work_location, preferred_language, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
     ,
     [email, passwordHash, homeLocation || null, workLocation || null, preferredLanguage || 'en', now, now]
   )
 
-  return getUserById(result.id)
+  const lastId = getLastInsertRowId()
+  return getUserById(lastId)
 }
 
 export const getUserByEmail = (email) => get(
