@@ -465,7 +465,7 @@ Transcript: "${transcript}"
 Location: ${location ? `Latitude: ${location.latitude}, Longitude: ${location.longitude}` : 'Not available'}
 
 Provide a concise analysis about the following, with the specified json format:
-1. Overall Tone & Urgency Level (1-10), where 1-6 is low urgency, where a simple save for later or texting emergency contact can suffice and 7-10 is high urgency, contact authorities immediately; like in potential felony situations. Consider tone, keywords, and context in your assessment.
+1. Overall Tone & Urgency Level (1-10), where 1-6 is low urgency, where a simple save for later or texting emergency contact can suffice and 7-10 is high urgency, contact authorities immediately; like in situations that pose extreme physical or psychological danger. Consider tone, keywords, and context in your assessment.
 2. Key Keywords and Topics
 3. Detected Emergency Type (if any)
 4. Recommended Actions, recommended actions fall under these categories: 911 immediate help, save encounter, alert emergency contact, and advise responders.
