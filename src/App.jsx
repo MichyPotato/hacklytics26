@@ -6,6 +6,7 @@ import { useAuth } from './context/AuthContext'
 import LoginPage from './pages/LoginPage'
 import SignupPage from './pages/SignupPage'
 import ProfilePage from './pages/ProfilePage'
+import FakeCallPage from './pages/FakeCallPage'
 import './App.css'
 
 export default function App() {
@@ -27,6 +28,9 @@ export default function App() {
         </header>
         <nav className="tab-bar">
           <NavLink to="/" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>Panic Button</NavLink>
+          {token && (
+            <NavLink to="/fake-call" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>Fake Call</NavLink>
+          )}
           {token ? (
             <NavLink to="/profile" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>Profile</NavLink>
           ) : (
@@ -47,6 +51,14 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <ProfilePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/fake-call"
+              element={
+                <ProtectedRoute>
+                  <FakeCallPage />
                 </ProtectedRoute>
               }
             />

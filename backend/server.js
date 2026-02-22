@@ -8,7 +8,7 @@ import fs from 'fs'
 import dotenv from 'dotenv'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
-import { initDb, createUser, getUserByEmail, getUserById, updateUserLocations } from './db.js'
+import { initDb, createUser, getUserByEmail, getUserById, updateUserLocations, updateUserLanguage } from './db.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -36,6 +36,7 @@ const sanitizeUser = (user) => ({
   email: user.email,
   homeLocation: user.home_location,
   workLocation: user.work_location,
+  preferredLanguage: user.preferred_language || 'en',
   createdAt: user.created_at,
   updatedAt: user.updated_at
 })
@@ -269,6 +270,27 @@ app.put('/api/profile/locations', requireAuth, async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to update locations'
+    })
+  }
+})
+
+app.put('/api/profile/language', requireAuth, async (req, res) => {
+  try {
+    const { preferredLanguage } = req.body
+    const user = await updateUserLanguage({
+      id: req.user.id,
+      preferredLanguage
+    })
+
+    return res.json({
+      success: true,
+      user: sanitizeUser(user)
+    })
+  } catch (error) {
+    console.error('Language update error:', error)
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update language'
     })
   }
 })
@@ -778,6 +800,242 @@ Keep the summary concise and actionable. Return the JSON Object.`
     res.status(500).json({
       success: false,
       message: error.message
+    })
+  }
+})
+
+// Fake call generation with Eleven Labs
+app.post('/api/fake-call/generate', requireAuth, async (req, res) => {
+  try {
+    const { language } = req.body
+    const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY
+
+    if (!elevenLabsApiKey) {
+      console.error('ELEVENLABS_API_KEY not configured in environment')
+      return res.status(500).json({
+        success: false,
+        message: 'Eleven Labs API key not configured'
+      })
+    }
+
+    console.log(`Generating fake call audio for language: ${language}`)
+
+    // Generate conversation script based on language - more interactive and two-way
+    const conversationScripts = {
+      en: "Hello? Oh hey! Yeah, I'm on my way right now............... Oh really? That's actually pretty funny! ............... Yeah, I remember when that happened last time. So the traffic isn't too bad, I should be there in about 15 minutes............... Wait, what did you say? ............... Oh, the meeting is still at 3 PM? Perfect, that works for me............... By the way, did you end up finishing that project we talked about? ............... That's great! I knew you could do it............... Okay, I'm getting close now. I'll see you in a few minutes. Thanks for calling!",
+      es: "¿Hola? ¡Ah, hola! Sí, estoy en camino ahora mismo............... ¿De verdad? ¡Eso es bastante gracioso! ............... Sí, recuerdo cuando eso pasó la última vez. El tráfico no está tan mal, debería llegar en unos 15 minutos............... Espera, ¿qué dijiste? ............... Ah, ¿la reunión sigue siendo a las 3 PM? Perfecto, eso me funciona............... Por cierto, ¿terminaste ese proyecto del que hablamos? ............... ¡Qué bien! Sabía que podías hacerlo............... Bueno, ya estoy cerca. Te veo en unos minutos. ¡Gracias por llamar!",
+      fr: "Allô? Ah salut! Oui, je suis en route maintenant............... Ah vraiment? C'est plutôt drôle! ............... Oui, je me souviens quand c'est arrivé la dernière fois. Le trafic n'est pas trop mal, je devrais être là dans environ 15 minutes............... Attends, qu'est-ce que tu as dit? ............... Ah, la réunion est toujours à 15 heures? Parfait, ça me convient............... Au fait, as-tu fini ce projet dont nous avons parlé? ............... C'est super! Je savais que tu pouvais le faire............... Bon, je suis presque arrivé. Je te vois dans quelques minutes. Merci d'avoir appelé!",
+      de: "Hallo? Oh hey! Ja, ich bin gerade unterwegs............... Oh wirklich? Das ist ja lustig! ............... Ja, ich erinnere mich, als das das letzte Mal passiert ist. Der Verkehr ist nicht so schlimm, ich sollte in etwa 15 Minuten da sein............... Warte, was hast du gesagt? ............... Ah, das Meeting ist immer noch um 15 Uhr? Perfect, das passt mir............... Übrigens, hast du das Projekt fertig, über das wir gesprochen haben? ............... Das ist toll! Ich wusste, dass du das schaffst............... Okay, ich bin gleich da. Bis in ein paar Minuten. Danke für den Anruf!",
+      it: "Pronto? Oh ciao! Sì, sono in viaggio adesso............... Oh davvero? È piuttosto divertente! ............... Sì, ricordo quando è successo l'ultima volta. Il traffico non è male, dovrei arrivare tra circa 15 minuti............... Aspetta, cosa hai detto? ............... Ah, la riunione è ancora alle 15? Perfetto, mi va bene............... A proposito, hai finito quel progetto di cui abbiamo parlato? ............... È fantastico! Sapevo che potevi farcela............... Okay, sto arrivando. Ci vediamo tra pochi minuti. Grazie per la chiamata!",
+      pt: "Alô? Ah oi! Sim, estou a caminho agora............... Ah é mesmo? Isso é bem engraçado! ............... Sim, eu lembro quando isso aconteceu da última vez. O trânsito não está tão ruim, devo chegar em cerca de 15 minutos............... Espera, o que você disse? ............... Ah, a reunião ainda é às 15h? Perfeito, funciona para mim............... Aliás, você terminou aquele projeto que conversamos? ............... Que ótimo! Eu sabia que você conseguiria............... Ok, já estou chegando. Te vejo em alguns minutos. Obrigado por ligar!",
+      zh: "喂？哦，嘿！是的，我现在在路上............... 哦，真的吗？那真有趣！............... 是的，我记得上次发生那件事。交通不太糟糕，我大约15分钟后就到............... 等等，你说什么？............... 哦，会议还是下午3点？完美，这对我来说没问题............... 顺便问一下，你完成我们谈到的那个项目了吗？............... 太棒了！我就知道你能做到............... 好的，我快到了。几分钟后见。谢谢你打电话来！",
+      ja: "もしもし？あ、やあ！うん、今向かってるよ............... 本当？それは面白いね！............... うん、前回それが起こった時のこと覚えてるよ。交通はそんなに悪くないから、15分くらいで着くはず............... ちょっと待って、何て言った？............... ああ、会議はまだ午後3時？完璧、それで大丈夫だよ............... そういえば、話してたプロジェクト終わった？............... すごいね！できると思ってたよ............... オーケー、もうすぐ着くよ。数分で会おう。電話ありがとう！",
+      ko: "여보세요? 아, 안녕! 응, 지금 가고 있어............... 오 정말? 그거 꽤 웃기네! ............... 응, 지난번에 그런 일이 있었던 거 기억해. 교통은 나쁘지 않아서 15분 정도면 도착할 거야............... 잠깐, 뭐라고 했어? ............... 아, 회의가 여전히 오후 3시야? 완벽해, 나한테 괜찮아............... 그런데, 우리가 얘기했던 그 프로젝트 끝냈어? ............... 잘했어! 할 수 있을 줄 알았어............... 좋아, 거의 다 왔어. 몇 분 후에 봐. 전화해줘서 고마워!",
+      ar: "مرحبا؟ أوه مرحبا! نعم، أنا في الطريق الآن............... حقا؟ هذا مضحك جدا! ............... نعم، أتذكر عندما حدث ذلك في المرة الأخيرة. حركة المرور ليست سيئة للغاية، يجب أن أصل في حوالي 15 دقيقة............... انتظر، ماذا قلت؟ ............... آه، الاجتماع لا يزال في الساعة 3 مساء؟ مثالي، هذا يناسبني............... بالمناسبة، هل أنهيت ذلك المشروع الذي تحدثنا عنه؟ ............... هذا رائع! كنت أعلم أنك تستطيع فعلها............... حسنا، أنا قريب الآن. سأراك في بضع دقائق. شكرا للاتصال!",
+      hi: "हैलो? अरे हाय! हां, मैं अभी रास्ते में हूं............... ओह सच में? वह वास्तव में काफी मजेदार है! ............... हां, मुझे याद है जब पिछली बार ऐसा हुआ था। ट्रैफिक इतना बुरा नहीं है, मुझे लगभग 15 मिनट में पहुंचना चाहिए............... रुको, तुमने क्या कहा? ............... ओह, मीटिंग अभी भी दोपहर 3 बजे है? बढ़िया, यह मेरे लिए काम करता है............... वैसे, क्या तुमने वह प्रोजेक्ट खत्म कर लिया जिसके बारे में हमने बात की थी? ............... बहुत बढ़िया! मुझे पता था तुम यह कर सकते हो............... ठीक है, मैं करीब आ रहा हूं। कुछ मिनटों में मिलते हैं। कॉल करने के लिए धन्यवाद!",
+      ru: "Алло? О, привет! Да, я сейчас в пути............... О, правда? Это довольно забавно! ............... Да, я помню, когда это случилось в прошлый раз. Пробки не такие сильные, я должен быть там примерно через 15 минут............... Подожди, что ты сказал? ............... А, встреча все еще в 3 часа дня? Отлично, мне подходит............... Кстати, ты закончил тот проект, о котором мы говорили? ............... Замечательно! Я знал, что ты справишься............... Хорошо, я уже близко. Увидимся через несколько минут. Спасибо за звонок!"
+    }
+
+    const script = conversationScripts[language] || conversationScripts.en
+
+    // Voice IDs for Eleven Labs (you can customize these)
+    const voiceId = '21m00Tcm4TlvDq8ikWAM' // Rachel voice (default)
+
+    // Call Eleven Labs API
+    const response = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+      {
+        method: 'POST',
+        headers: {
+          'Accept': 'audio/mpeg',
+          'Content-Type': 'application/json',
+          'xi-api-key': elevenLabsApiKey
+        },
+        body: JSON.stringify({
+          text: script,
+          model_id: 'eleven_multilingual_v2',
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75
+          }
+        })
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('Eleven Labs API error:', response.status, errorText)
+      return res.status(response.status).json({
+        success: false,
+        message: `Eleven Labs API error: ${response.statusText}. Check your API key and quota.`
+      })
+    }
+
+    console.log('Successfully generated audio from Eleven Labs')
+
+    const audioBuffer = await response.arrayBuffer()
+    
+    res.set({
+      'Content-Type': 'audio/mpeg',
+      'Content-Length': audioBuffer.byteLength
+    })
+    
+    res.send(Buffer.from(audioBuffer))
+  } catch (error) {
+    console.error('Fake call generation error:', error.message, error)
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to generate fake call'
+    })
+  }
+})
+
+// Interactive fake call - respond to user input
+app.post('/api/fake-call/respond', requireAuth, async (req, res) => {
+  try {
+    const { language, userMessage, conversationHistory } = req.body
+    const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY
+    const geminiApiKey = process.env.GEMINI_API_KEY
+
+    if (!elevenLabsApiKey) {
+      console.error('ELEVENLABS_API_KEY not configured in environment')
+      return res.status(500).json({
+        success: false,
+        message: 'Eleven Labs API key not configured'
+      })
+    }
+
+    if (!geminiApiKey) {
+      console.error('GEMINI_API_KEY not configured in environment')
+      return res.status(500).json({
+        success: false,
+        message: 'Gemini API key not configured'
+      })
+    }
+
+    console.log(`Generating response to user message: "${userMessage}" in language: ${language}`)
+
+    // Language-specific prompts for the AI to stay in character
+    const languageNames = {
+      en: 'English',
+      es: 'Spanish',
+      fr: 'French',
+      de: 'German',
+      it: 'Italian',
+      pt: 'Portuguese',
+      zh: 'Chinese',
+      ja: 'Japanese',
+      ko: 'Korean',
+      ar: 'Arabic',
+      hi: 'Hindi',
+      ru: 'Russian'
+    }
+
+    const languageName = languageNames[language] || 'English'
+
+    // Build conversation context
+    let conversationContext = ''
+    if (conversationHistory && conversationHistory.length > 0) {
+      conversationContext = conversationHistory
+        .slice(-6) // Last 3 exchanges
+        .map(msg => `${msg.role === 'user' ? 'User' : 'You'}: ${msg.content}`)
+        .join('\n')
+    }
+
+    // Generate contextual response using Gemini
+    const prompt = `You are on a phone call with someone. You're playing the role of a friend who called them to chat about meeting up later. 
+
+Respond naturally and conversationally in ${languageName} to what they just said: "${userMessage}"
+
+${conversationContext ? `Previous conversation:\n${conversationContext}\n` : ''}
+
+Important guidelines:
+- Keep your response brief (1-3 sentences), like a natural phone conversation
+- Sound friendly and casual
+- Stay in character as someone discussing meeting up or plans
+- React naturally to what they said
+- If they ask a question, answer it appropriately
+- If they seem like they want to end the call, be understanding and wrap up politely
+- Respond ONLY in ${languageName}, no other language
+
+Your response (in ${languageName}):`
+
+    const geminiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${geminiApiKey}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: prompt
+                }
+              ]
+            }
+          ]
+        })
+      }
+    )
+
+    const geminiData = await geminiResponse.json()
+    
+    if (!geminiData.candidates || !geminiData.candidates[0] || !geminiData.candidates[0].content) {
+      throw new Error('Invalid response from Gemini API')
+    }
+
+    const aiResponse = geminiData.candidates[0].content.parts[0].text.trim()
+    console.log(`AI generated response: "${aiResponse}"`)
+
+    // Convert response to speech using Eleven Labs
+    const voiceId = '21m00Tcm4TlvDq8ikWAM' // Rachel voice
+
+    const ttsResponse = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+      {
+        method: 'POST',
+        headers: {
+          'Accept': 'audio/mpeg',
+          'Content-Type': 'application/json',
+          'xi-api-key': elevenLabsApiKey
+        },
+        body: JSON.stringify({
+          text: aiResponse,
+          model_id: 'eleven_multilingual_v2',
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75
+          }
+        })
+      }
+    )
+
+    if (!ttsResponse.ok) {
+      const errorText = await ttsResponse.text()
+      console.error('Eleven Labs API error:', ttsResponse.status, errorText)
+      return res.status(ttsResponse.status).json({
+        success: false,
+        message: `Eleven Labs API error: ${ttsResponse.statusText}`
+      })
+    }
+
+    console.log('Successfully generated interactive response audio')
+    const audioBuffer = await ttsResponse.arrayBuffer()
+    
+    res.set({
+      'Content-Type': 'audio/mpeg',
+      'Content-Length': audioBuffer.byteLength
+    })
+    
+    res.send(Buffer.from(audioBuffer))
+  } catch (error) {
+    console.error('Interactive call response error:', error.message, error)
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to generate response'
     })
   }
 })

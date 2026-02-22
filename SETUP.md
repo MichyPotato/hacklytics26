@@ -94,6 +94,23 @@ node backend/server.js
 
 If `GEMINI_API_KEY` is not set the backend will simulate a score for testing.
 
+5.2 (Optional) Set up Eleven Labs API key for Fake Call feature
+
+To enable the Fake Call feature with text-to-speech, add your Eleven Labs API key to `backend/.env`:
+
+```dotenv
+ELEVENLABS_API_KEY=your_eleven_labs_api_key_here
+```
+
+Get your API key from: https://elevenlabs.io/
+
+The Fake Call feature allows users to:
+- Simulate a phone call in their preferred language
+- Use realistic text-to-speech audio (powered by Eleven Labs)
+- Create the appearance of being on an important call for safety purposes
+
+Without the API key, the fake call endpoint will return an error. The feature supports 12 languages including English, Spanish, French, German, Italian, Portuguese, Chinese, Japanese, Korean, Arabic, Hindi, and Russian.
+
 ### Running Both Frontend and Backend Concurrently
 
 From the root directory, run both servers at once:

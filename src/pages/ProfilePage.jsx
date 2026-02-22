@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 
 export default function ProfilePage() {
-  const { user, updateLocations } = useAuth()
+  const { user, updateLocations, updateLanguage } = useAuth()
   const [homeLocation, setHomeLocation] = useState('')
   const [workLocation, setWorkLocation] = useState('')
+  const [preferredLanguage, setPreferredLanguage] = useState('en')
   const [status, setStatus] = useState('')
   const [isSaving, setIsSaving] = useState(false)
 
@@ -12,6 +13,7 @@ export default function ProfilePage() {
     if (user) {
       setHomeLocation(user.homeLocation || '')
       setWorkLocation(user.workLocation || '')
+      setPreferredLanguage(user.preferredLanguage || 'en')
     }
   }, [user])
 
@@ -28,6 +30,18 @@ export default function ProfilePage() {
     }
 
     setIsSaving(false)
+  }
+
+  const handleLanguageChange = async (event) => {
+    const newLanguage = event.target.value
+    setPreferredLanguage(newLanguage)
+    
+    const result = await updateLanguage({ preferredLanguage: newLanguage })
+    if (result.success) {
+      setStatus('Language updated.')
+    } else {
+      setStatus(result.message || 'Could not update language.')
+    }
   }
 
   return (
@@ -58,6 +72,27 @@ export default function ProfilePage() {
               value={workLocation}
               onChange={(event) => setWorkLocation(event.target.value)}
             />
+          </label>
+          <label className="form-field">
+            Preferred language for emergency calls
+            <select 
+              value={preferredLanguage} 
+              onChange={handleLanguageChange}
+              className="language-select"
+            >
+              <option value="en">English</option>
+              <option value="es">Spanish (Español)</option>
+              <option value="fr">French (Français)</option>
+              <option value="de">German (Deutsch)</option>
+              <option value="it">Italian (Italiano)</option>
+              <option value="pt">Portuguese (Português)</option>
+              <option value="zh">Chinese (中文)</option>
+              <option value="ja">Japanese (日本語)</option>
+              <option value="ko">Korean (한국어)</option>
+              <option value="ar">Arabic (العربية)</option>
+              <option value="hi">Hindi (हिन्दी)</option>
+              <option value="ru">Russian (Русский)</option>
+            </select>
           </label>
           {status && <div className="form-status">{status}</div>}
           <button type="submit" className="primary" disabled={isSaving}>

@@ -110,6 +110,25 @@ export const AuthProvider = ({ children }) => {
     return { success: false, message: data.message || 'Update failed' }
   }
 
+  const updateLanguage = async ({ preferredLanguage }) => {
+    const response = await fetch(`${API_BASE}/api/profile/language`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ preferredLanguage })
+    })
+
+    const data = await response.json()
+    if (response.ok && data.success) {
+      setUser(data.user)
+      return { success: true }
+    }
+
+    return { success: false, message: data.message || 'Update failed' }
+  }
+
   const logout = () => {
     setSession('', null)
   }
@@ -121,6 +140,7 @@ export const AuthProvider = ({ children }) => {
     login,
     signup,
     updateLocations,
+    updateLanguage,
     logout
   }), [token, user, isLoading])
 
