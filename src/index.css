@@ -1,9 +1,31 @@
-:root{--accent:#0b5fff}
-*{box-sizing:border-box;font-family:Inter,system-ui,Helvetica,Arial,sans-serif}
-body,html,#root{height:100%;margin:0}
-.app{display:flex;flex-direction:column;height:100vh}
-.app-header{background:#0b5fff;color:#fff;padding:12px 16px;font-weight:600}
-.tab-bar{display:flex;gap:8px;padding:12px 16px;background:#f5f7fb}
-.tab-bar button{padding:8px 12px;border:1px solid #e1e6f0;background:#fff;border-radius:6px;cursor:pointer}
-.tab-bar button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-.content{flex:1;overflow:auto}
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=Space+Grotesk:wght@400;600;700&display=swap');
+
+:root {
+	--ink: #161c2d;
+	--muted: #5b6475;
+	--accent: #0b5fff;
+	--accent-strong: #0047d6;
+	--surface: #ffffff;
+	--surface-soft: #f2f4f8;
+	--border: #e3e7ef;
+}
+
+* {
+	box-sizing: border-box;
+	font-family: 'Space Grotesk', 'IBM Plex Sans', sans-serif;
+}
+
+body, html, #root {
+	height: 100%;
+	margin: 0;
+}
+
+body {
+	color: var(--ink);
+	background: radial-gradient(circle at top left, #fef3e7 0%, #f6f7fb 55%, #edf1ff 100%);
+}
+
+.muted {
+	color: var(--muted);
+	margin: 6px 0 18px;
+}

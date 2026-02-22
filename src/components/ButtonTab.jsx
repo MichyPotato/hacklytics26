@@ -2,8 +2,44 @@ import React, { useState, useEffect, useRef } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import ActionButtons from './ActionButtons'
+import { useAuth } from '../context/AuthContext'
+
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000'
+const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q='
+
+const parseLatLng = (value = '') => {
+  const cleaned = value.replace(/[()]/g, '').trim()
+  const parts = cleaned.split(/[\s,]+/).filter(Boolean)
+  if (parts.length < 2) return null
+  const lat = Number(parts[0])
+  const lng = Number(parts[1])
+  if (Number.isNaN(lat) || Number.isNaN(lng)) return null
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null
+  return { lat, lng }
+}
+
+const geocodeLocation = async (value = '') => {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const direct = parseLatLng(trimmed)
+  if (direct) return direct
+
+  const response = await fetch(`${NOMINATIM_URL}${encodeURIComponent(trimmed)}`, {
+    headers: {
+      'Accept-Language': 'en'
+    }
+  })
+  const results = await response.json()
+  if (!Array.isArray(results) || results.length === 0) return null
+  const candidate = results[0]
+  const lat = Number(candidate.lat)
+  const lng = Number(candidate.lon)
+  if (Number.isNaN(lat) || Number.isNaN(lng)) return null
+  return { lat, lng }
+}
 
 export default function ButtonTab() {
+  const { token, user } = useAuth()
   const [location, setLocation] = useState(null)
   const [locationError, setLocationError] = useState(null)
   const [isRecording, setIsRecording] = useState(false)
@@ -59,21 +95,57 @@ export default function ButtonTab() {
     }).addTo(map)
 
     // Add marker for user location
-    L.marker([location.latitude, location.longitude])
+    L.circleMarker([location.latitude, location.longitude], {
+      radius: 9,
+      color: '#2563eb',
+      fillColor: '#60a5fa',
+      fillOpacity: 0.9,
+      weight: 2
+    })
       .addTo(map)
       .bindPopup('Your Location')
       .openPopup()
+
+    let isActive = true
+
+    const addSavedMarkers = async () => {
+      if (!token || !user || !isActive) return
+
+      try {
+        const homeCoords = user.homeLocation ? await geocodeLocation(user.homeLocation) : null
+        const workCoords = user.workLocation ? await geocodeLocation(user.workLocation) : null
+
+        if (!isActive) return
+
+        if (homeCoords) {
+          L.marker([homeCoords.lat, homeCoords.lng])
+            .addTo(map)
+            .bindPopup('Home Location')
+        }
+
+        if (workCoords) {
+          L.marker([workCoords.lat, workCoords.lng])
+            .addTo(map)
+            .bindPopup('Work/School Location')
+        }
+      } catch (error) {
+        console.error('Failed to geocode saved locations:', error)
+      }
+    }
+
+    addSavedMarkers()
 
     mapRef.current = map
 
     // Cleanup function
     return () => {
+      isActive = false
       if (mapRef.current) {
         mapRef.current.remove()
         mapRef.current = null
       }
     }
-  }, [location])
+  }, [location, token, user])
 
   // Handle panic button press - start/stop recording and transcription
   const handlePanicPress = async () => {
@@ -199,10 +271,11 @@ export default function ButtonTab() {
     setIsAnalyzing(true)
     try {
       console.log('Sending transcript to backend:', text)
-      const response = await fetch('http://localhost:5000/api/analyze-transcript', {
+      const response = await fetch(`${API_BASE}/api/analyze-transcript`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
         body: JSON.stringify({
           transcript: text,

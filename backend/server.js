@@ -6,6 +6,9 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import fs from 'fs'
 import dotenv from 'dotenv'
+import bcrypt from 'bcryptjs'
+import jwt from 'jsonwebtoken'
+import { initDb, createUser, getUserByEmail, getUserById, updateUserLocations } from './db.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -21,6 +24,133 @@ app.use(cors())
 app.use(express.json())
 app.use(express.urlencoded({ limit: '50mb', extended: true }))
 
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret'
+
+initDb().catch((error) => {
+  console.error('Failed to initialize database:', error)
+  process.exit(1)
+})
+
+const sanitizeUser = (user) => ({
+  id: user.id,
+  email: user.email,
+  homeLocation: user.home_location,
+  workLocation: user.work_location,
+  createdAt: user.created_at,
+  updatedAt: user.updated_at
+})
+
+const signToken = (user) => jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' })
+
+const getTokenFromHeader = (header = '') => {
+  if (!header) return null
+  const [scheme, value] = header.split(' ')
+  if (scheme !== 'Bearer' || !value) return null
+  return value
+}
+
+const getUserFromAuthHeader = async (authHeader) => {
+  const token = getTokenFromHeader(authHeader)
+  if (!token) return null
+  try {
+    const payload = jwt.verify(token, JWT_SECRET)
+    const user = await getUserById(payload.userId)
+    return user || null
+  } catch (error) {
+    return null
+  }
+}
+
+const requireAuth = async (req, res, next) => {
+  const user = await getUserFromAuthHeader(req.headers.authorization)
+  if (!user) {
+    return res.status(401).json({
+      success: false,
+      message: 'Unauthorized'
+    })
+  }
+  req.user = user
+  return next()
+}
+
+const parseLatLng = (value = '') => {
+  const cleaned = value.replace(/[()]/g, '').trim()
+  const parts = cleaned.split(/[\s,]+/).filter(Boolean)
+  if (parts.length < 2) return null
+  const lat = Number(parts[0])
+  const lng = Number(parts[1])
+  if (Number.isNaN(lat) || Number.isNaN(lng)) return null
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null
+  return { lat, lng }
+}
+
+const haversineKm = (a, b) => {
+  const toRad = (deg) => (deg * Math.PI) / 180
+  const R = 6371
+  const dLat = toRad(b.lat - a.lat)
+  const dLng = toRad(b.lng - a.lng)
+  const lat1 = toRad(a.lat)
+  const lat2 = toRad(b.lat)
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(h))
+}
+
+const geocodeLocation = async (value = '') => {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const direct = parseLatLng(trimmed)
+  if (direct) return direct
+
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(trimmed)}`
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'hacklytics-app/1.0',
+        'Accept-Language': 'en'
+      }
+    })
+    const results = await response.json()
+    if (!Array.isArray(results) || results.length === 0) return null
+    const candidate = results[0]
+    const lat = Number(candidate.lat)
+    const lng = Number(candidate.lon)
+    if (Number.isNaN(lat) || Number.isNaN(lng)) return null
+    return { lat, lng }
+  } catch (error) {
+    console.warn('Geocode failed:', error)
+    return null
+  }
+}
+
+const buildSavedLocationContext = async (user) => {
+  if (!user) {
+    return 'Saved Locations: Not available'
+  }
+
+  const home = user.home_location ? user.home_location.trim() : ''
+  const work = user.work_location ? user.work_location.trim() : ''
+  const homeLabel = home || 'Not set'
+  const workLabel = work || 'Not set'
+  const homeCoords = home ? await geocodeLocation(home) : null
+  const workCoords = work ? await geocodeLocation(work) : null
+
+  let difference = 'Not enough info to compare.'
+  if (home && work) {
+    difference = home.toLowerCase() === work.toLowerCase()
+      ? 'Home and work/school are the same location.'
+      : 'Home and work/school are different locations.'
+  }
+
+  let distanceLine = 'Distance Difference: Not available.'
+  if (homeCoords && workCoords) {
+    const km = haversineKm(homeCoords, workCoords)
+    const miles = km * 0.621371
+    distanceLine = `Distance Difference: ${km.toFixed(2)} km (${miles.toFixed(2)} mi).`
+  }
+
+  return `Saved Locations:\nHome Location: ${homeLabel}\nWork/School Location: ${workLabel}\nLocation Difference: ${difference}\n${distanceLine}`
+}
+
 // Storage for uploaded conversations
 const upload = multer({ storage: multer.memoryStorage() })
 const conversationsDir = path.join(__dirname, 'conversations')
@@ -29,6 +159,119 @@ const conversationsDir = path.join(__dirname, 'conversations')
 if (!fs.existsSync(conversationsDir)) {
   fs.mkdirSync(conversationsDir, { recursive: true })
 }
+
+app.post('/api/auth/signup', async (req, res) => {
+  try {
+    const { email, password } = req.body
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and password are required'
+      })
+    }
+
+    const normalizedEmail = email.trim().toLowerCase()
+    const existingUser = await getUserByEmail(normalizedEmail)
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        message: 'Account already exists for this email'
+      })
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10)
+    const user = await createUser({
+      email: normalizedEmail,
+      passwordHash
+    })
+    const token = signToken(user)
+
+    return res.json({
+      success: true,
+      token,
+      user: sanitizeUser(user)
+    })
+  } catch (error) {
+    console.error('Signup error:', error)
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create account'
+    })
+  }
+})
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and password are required'
+      })
+    }
+
+    const normalizedEmail = email.trim().toLowerCase()
+    const user = await getUserByEmail(normalizedEmail)
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      })
+    }
+
+    const passwordMatches = await bcrypt.compare(password, user.password_hash)
+    if (!passwordMatches) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      })
+    }
+
+    const token = signToken(user)
+    return res.json({
+      success: true,
+      token,
+      user: sanitizeUser(user)
+    })
+  } catch (error) {
+    console.error('Login error:', error)
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to log in'
+    })
+  }
+})
+
+app.get('/api/auth/me', requireAuth, (req, res) => {
+  return res.json({
+    success: true,
+    user: sanitizeUser(req.user)
+  })
+})
+
+app.put('/api/profile/locations', requireAuth, async (req, res) => {
+  try {
+    const { homeLocation, workLocation } = req.body
+    const user = await updateUserLocations({
+      id: req.user.id,
+      homeLocation,
+      workLocation
+    })
+
+    return res.json({
+      success: true,
+      user: sanitizeUser(user)
+    })
+  } catch (error) {
+    console.error('Location update error:', error)
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update locations'
+    })
+  }
+})
 
 // Instagram Login API
 app.post('/api/instagram/login', (req, res) => {
@@ -431,6 +674,8 @@ app.post('/api/analyze/gemini', async (req, res) => {
 app.post('/api/analyze-transcript', async (req, res) => {
   try {
     const { transcript, location } = req.body
+    const authUser = await getUserFromAuthHeader(req.headers.authorization)
+    const savedLocationContext = await buildSavedLocationContext(authUser)
 
     if (!transcript || transcript.trim() === '') {
       return res.status(400).json({
@@ -445,7 +690,7 @@ app.post('/api/analyze-transcript', async (req, res) => {
       // Return a template if no API key is available
       return res.json({
         success: true,
-        analysis: `[ANALYSIS TEMPLATE - GEMINI API NOT CONFIGURED]\n\nTranscript received:\n"${transcript.substring(0, 100)}${transcript.length > 100 ? '...' : ''}"\n\nLocation: ${location ? `${location.latitude.toFixed(4)}°, ${location.longitude.toFixed(4)}°` : 'Not available'}\n\nThis would be analyzed for:\n- Tone and sentiment\n- Key keywords and topics\n- Urgency level\n- Recommended actions\n- Context and location relevance`
+        analysis: `[ANALYSIS TEMPLATE - GEMINI API NOT CONFIGURED]\n\nTranscript received:\n"${transcript.substring(0, 100)}${transcript.length > 100 ? '...' : ''}"\n\nLocation: ${location ? `${location.latitude.toFixed(4)}°, ${location.longitude.toFixed(4)}°` : 'Not available'}\n${savedLocationContext}\n\nThis would be analyzed for:\n- Tone and sentiment\n- Key keywords and topics\n- Urgency level\n- Recommended actions\n- Context and location relevance`
       })
     }
 
@@ -462,7 +707,8 @@ Do not include markdown formatting.
 Do not add extra fields.
 Transcript: "${transcript}"
 
-Location: ${location ? `Latitude: ${location.latitude}, Longitude: ${location.longitude}` : 'Not available'}
+Current Location: ${location ? `Latitude: ${location.latitude}, Longitude: ${location.longitude}` : 'Not available'}
+${savedLocationContext}
 
 Provide a concise analysis about the following, with the specified json format:
 1. Overall Tone & Urgency Level (1-10), where 1-6 is low urgency, where a simple save for later or texting emergency contact can suffice and 7-10 is high urgency, contact authorities immediately; like in situations that pose extreme physical or psychological danger. Consider tone, keywords, and context in your assessment.
