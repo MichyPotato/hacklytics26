@@ -16,7 +16,7 @@ export default function App() {
     <Router>
       <div className="app">
         <header className="app-header">
-          <div className="brand">Hacklytics</div>
+          <div className="brand">flaggr</div>
           <div className="header-meta">
             {user?.email && <span className="pill">{user.email}</span>}
             {token && (
